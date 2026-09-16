@@ -60,6 +60,20 @@ export function startOfOrgCalendarDay(dateInput: string | Date, timeZone: string
   return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
 }
 
+/** UTC instant for a clock time on the organization calendar date. */
+export function parseOrgTimeOnDate(
+  dateInput: string | Date,
+  time: string,
+  timeZone: string
+): Date {
+  const dateKey = typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.slice(0, 10)) && dateInput.length <= 10
+    ? dateInput
+    : getOrgCalendarDate(new Date(dateInput), timeZone);
+  const [hours, minutes] = time.split(':').map((part) => Number(part));
+  const dayStart = startOfOrgCalendarDay(dateKey, timeZone);
+  return new Date(dayStart.getTime() + (hours * 60 + minutes) * 60 * 1000);
+}
+
 export function endOfOrgCalendarDay(dateInput: string | Date, timeZone: string): Date {
   const start = startOfOrgCalendarDay(dateInput, timeZone);
   const nextDay = getOrgCalendarDate(new Date(start.getTime() + 36 * 60 * 60 * 1000), timeZone);

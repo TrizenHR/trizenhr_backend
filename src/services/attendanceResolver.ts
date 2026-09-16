@@ -3,7 +3,13 @@ import Attendance, { AttendanceStatus } from '../models/Attendance';
 import Leave, { LeaveStatus } from '../models/Leave';
 import User from '../models/User';
 import { IAttendancePolicy, PolicyDayType } from '../models/AttendancePolicy';
-import { parseTimeOnDate } from '../utils/organizationSettings';
+import {
+  endOfOrgCalendarDay,
+  getOrganizationTimezone,
+  getOrgCalendarDate,
+  parseOrgTimeOnDate,
+  startOfOrgCalendarDay,
+} from '../utils/timezone';
 import {
   dateToWeekDay,
   resolveDayRule,
@@ -102,13 +108,16 @@ async function resolveDayRuleForUser(
 
 export class AttendanceResolver {
   async resolve(employeeId: string, dateInput: Date): Promise<ResolvedAttendance> {
-    const date = startOfDay(dateInput);
     const user = await User.findById(employeeId).lean();
     if (!user || !user.organizationId) {
       throw new Error('Employee not found');
     }
 
     const organizationId = user.organizationId.toString();
+    const organizationTimezone = await getOrganizationTimezone(organizationId);
+    const organizationDate = getOrgCalendarDate(dateInput, organizationTimezone);
+    const date = startOfOrgCalendarDay(organizationDate, organizationTimezone);
+    const dayEnd = endOfOrgCalendarDay(organizationDate, organizationTimezone);
     const joinDate = getEffectiveJoinDate(user);
 
     const policy = await resolveUserAttendancePolicy(user);
@@ -125,7 +134,7 @@ export class AttendanceResolver {
       userId: employeeId,
       organizationId,
       status: LeaveStatus.APPROVED,
-      startDate: { $lte: endOfDay(date) },
+      startDate: { $lte: dayEnd },
       endDate: { $gte: date },
     }).lean();
 
@@ -134,7 +143,7 @@ export class AttendanceResolver {
     const record = await Attendance.findOne({
       userId: employeeId,
       organizationId,
-      date,
+      date: { $gte: date, $lte: dayEnd },
     }).lean();
 
     const base: ResolvedAttendance = {
@@ -182,8 +191,8 @@ export class AttendanceResolver {
     const expected = dayRule.expectedHours ?? 8;
     const graceMinutes = dayRule.graceMinutes ?? 15;
     const workStart = dayRule.startTime
-      ? parseTimeOnDate(date, dayRule.startTime)
-      : parseTimeOnDate(date, '09:00');
+      ? parseOrgTimeOnDate(date, dayRule.startTime, organizationTimezone)
+      : parseOrgTimeOnDate(date, '09:00', organizationTimezone);
     const graceEnd = new Date(workStart.getTime() + graceMinutes * 60 * 1000);
     const checkInTime = new Date(record.checkIn);
     const isLate = checkInTime > graceEnd;

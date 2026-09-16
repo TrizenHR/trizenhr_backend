@@ -5,6 +5,7 @@ import connectDB from './config/db';
 import { connectRedis } from './config/redis';
 import { logEmailServiceConfigAtStartup } from './services/emailNotificationService';
 import { startBirthdayEmailScheduler } from './jobs/birthdayEmailScheduler';
+import { startAttendanceIrregularityEmailScheduler } from './jobs/attendanceIrregularityEmailScheduler';
 import { attachFieldTrackingSocket } from './socket/fieldTrackingSocket';
 
 const startServer = async (): Promise<void> => {
@@ -25,6 +26,7 @@ const startServer = async (): Promise<void> => {
       console.info(`🚀 Server running in ${config.nodeEnv} mode on port ${config.port}`);
       console.info(`📍 Health check: http://localhost:${config.port}/api/health`);
       startBirthdayEmailScheduler();
+      startAttendanceIrregularityEmailScheduler();
     });
   } catch (error) {
     console.error('Failed to start server:', error);

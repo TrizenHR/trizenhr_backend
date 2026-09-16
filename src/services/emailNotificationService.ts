@@ -462,6 +462,43 @@ class EmailNotificationService {
     }
   }
 
+  async sendAttendanceIrregularity(input: {
+    recipients: string[];
+    employeeName: string;
+    employeeEmail?: string;
+    organizationName?: string;
+    date: string;
+    status: string;
+    details?: Record<string, string | number | undefined>;
+  }): Promise<void> {
+    if (!this.isEmailConfigured()) {
+      this.warnEmailSkipped('attendance-irregularity');
+      return;
+    }
+
+    if (!config.emailService.authToken) {
+      logger.warn('Attendance irregularity email skipped: EMAIL_SERVICE_AUTH_TOKEN not set');
+      return;
+    }
+
+    try {
+      await axios.post(
+        `${config.emailService.url}/api/v1/email/attendance-irregularity`,
+        { ...input, platformName: 'TrizenHR' },
+        { headers: this.getHeaders(), timeout: 10000 }
+      );
+      logger.info('Attendance irregularity email API OK', {
+        recipients: input.recipients,
+        employeeName: input.employeeName,
+        date: input.date,
+        status: input.status,
+      });
+    } catch (error) {
+      logger.error('Attendance irregularity email failed', formatAxiosError(error));
+      throw error;
+    }
+  }
+
   /**
    * Send OTP verification code email for trial registration
    */

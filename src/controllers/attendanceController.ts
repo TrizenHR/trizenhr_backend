@@ -216,12 +216,21 @@ export class AttendanceController {
         const targetUser = await User.findOne({
           _id: userId,
           organizationId: req.organizationId,
-        }).select('supervisorId');
+        }).select('supervisorId department');
 
-        if (!targetUser || targetUser.supervisorId?.toString() !== req.user!.userId) {
+        const isDirectReport = targetUser?.supervisorId?.toString() === req.user!.userId;
+
+        // Fallback: allow if target is in the same department as the supervisor
+        let isSameDepartment = false;
+        if (!isDirectReport && targetUser) {
+          const supervisor = await User.findById(req.user!.userId).select('department').lean();
+          isSameDepartment = !!(supervisor?.department && targetUser.department === supervisor.department);
+        }
+
+        if (!targetUser || (!isDirectReport && !isSameDepartment)) {
           res.status(403).json({
             success: false,
-            error: 'You can only view attendance for your direct reports',
+            error: 'You can only view attendance for your team members',
             timestamp: new Date().toISOString(),
           });
           return;

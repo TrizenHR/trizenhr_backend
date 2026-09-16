@@ -10,7 +10,7 @@ import Leave, { LeaveStatus } from '../models/Leave';
 import User, { UserRole } from '../models/User';
 import { startOfDay, endOfDay, format } from 'date-fns';
 import { checkInMinioStorage } from '../utils/storage/MinIOStorage';
-import { parseTimeOnDate } from '../utils/organizationSettings';
+import { parseOrgTimeOnDate } from '../utils/timezone';
 import { getNonWorkingHolidayDateKeys } from '../utils/workingDays';
 import { haversineDistance } from '../utils/geoUtils';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../utils/AppError';
@@ -26,6 +26,7 @@ import {
   isPolicyWorkingDay,
 } from '../utils/attendanceAbsence';
 import { attendanceResolver, mapResolvedToAttendanceStatus } from './attendanceResolver';
+import attendanceIrregularityNotificationService from './attendanceIrregularityNotificationService';
 import { shiftService } from './shiftService';
 import { FieldTrackingService } from './fieldTrackingService';
 import { FieldTrackingStatus } from '../models/FieldTrackingSession';
@@ -335,8 +336,8 @@ export class AttendanceService {
 
     const now = new Date();
     const workStartTime = resolved.startTime
-      ? parseTimeOnDate(today, resolved.startTime)
-      : parseTimeOnDate(today, '09:00');
+      ? parseOrgTimeOnDate(today, resolved.startTime, orgTimezone)
+      : parseOrgTimeOnDate(today, '09:00', orgTimezone);
     const graceMinutes = resolved.graceMinutes ?? 15;
     const graceEnd = new Date(workStartTime.getTime() + graceMinutes * 60 * 1000);
 
@@ -493,6 +494,12 @@ export class AttendanceService {
       }
     }
 
+    void attendanceIrregularityNotificationService
+      .notify(await attendanceResolver.resolve(userId, today), attendance.toObject(), 'check_in')
+      .catch((error: any) => {
+        console.error('Attendance irregularity notification failed after check-in:', error?.message || error);
+      });
+
     return {
       ...((enriched ?? {}) as object),
       fieldTrackingStarted,
@@ -595,6 +602,12 @@ export class AttendanceService {
     const resolved = await attendanceResolver.resolve(userId, today);
     attendance.status = mapResolvedToAttendanceStatus(resolved.attendanceStatus);
     await attendance.save();
+
+    void attendanceIrregularityNotificationService
+      .notify(resolved, attendance.toObject(), 'check_out')
+      .catch((error: any) => {
+        console.error('Attendance irregularity notification failed after check-out:', error?.message || error);
+      });
 
     // End field tracking: save check-out GPS on the session first, then mark completed.
     let fieldTrackingStopped = false;

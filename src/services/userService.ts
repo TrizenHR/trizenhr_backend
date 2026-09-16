@@ -645,20 +645,41 @@ class UserService {
   }
 
   /**
-   * Get team members for a supervisor
+   * Get team members for a supervisor.
+   * Primary: users with supervisorId === supervisorId.
+   * Fallback: users in the same department as the supervisor (excludes Admin / HR / SuperAdmin).
    */
   async getTeamMembers(supervisorId: string, organizationId?: string): Promise<IUser[]> {
-    const query: any = { 
-      supervisorId: new mongoose.Types.ObjectId(supervisorId), 
-      isActive: true 
+    const query: any = {
+      supervisorId: new mongoose.Types.ObjectId(supervisorId),
+      isActive: true,
     };
     if (organizationId) {
       query.organizationId = new mongoose.Types.ObjectId(organizationId);
     }
 
-    const users = await User.find(query)
+    let users = await User.find(query)
       .populate('supervisorId', 'firstName lastName email')
       .sort({ firstName: 1 });
+
+    // Fallback: no explicit supervisorId links found — use department-based membership
+    if (users.length === 0) {
+      const supervisor = await User.findById(supervisorId).select('department organizationId').lean();
+      if (supervisor?.department) {
+        const deptQuery: any = {
+          department: supervisor.department,
+          isActive: true,
+          role: { $nin: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.HR] },
+        };
+        const effectiveOrgId = organizationId || supervisor.organizationId?.toString();
+        if (effectiveOrgId) {
+          deptQuery.organizationId = new mongoose.Types.ObjectId(effectiveOrgId);
+        }
+        users = await User.find(deptQuery)
+          .populate('supervisorId', 'firstName lastName email')
+          .sort({ firstName: 1 });
+      }
+    }
 
     return users;
   }
